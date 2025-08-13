@@ -138,7 +138,7 @@ function mdToHtmlWithLib(md) {
       // sanitize output to remove disallowed tags/attributes (best-effort)
       html = sanitizeHtml(html, {
         allowedTags: sanitizeHtml.defaults?.allowedTags || [],
-        allowedAttributes: sanitizeHtml.defaults?.allowedAttributes || {}
+        allowedAttributes: sanitizeHtml.defaults?.allowedAttributes || [],
       });
     }
     return html;
@@ -213,6 +213,25 @@ function extractBlocks(rawMd) {
   return { md, snetScripts, snetStyles };
 }
 
+function buildCspMetaContent(nonce) {
+  return [
+    `default-src 'self'`,
+    `base-uri 'self'`,
+    `object-src 'none'`,
+    // Scripts — allow nonce for <script> and maintain fallback for older browsers
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
+    // Inline event handlers with matching hashes (optional)
+    `script-src-attr 'unsafe-hashes'`,
+    // Styles — allow nonce for <style>
+    `style-src 'self' 'nonce-${nonce}'`,
+    // Inline style attributes (optional)
+    `style-src-attr 'unsafe-hashes'`,
+    `img-src 'self' data:`,
+    `font-src 'self' data:`
+  ].join('; ');
+}
+
+
 // Build a plain HTML page (no encryption)
 function buildPlainPageHtml(pageName, contentHtml, stylesHtml, snetScripts, nonce) {
   const scriptBlocks = (snetScripts && snetScripts.length)
@@ -225,14 +244,14 @@ function buildPlainPageHtml(pageName, contentHtml, stylesHtml, snetScripts, nonc
 <head>
   <meta charset="utf-8" />
   <title>${escapeHtml(pageName)}</title>
+  <meta http-equiv="Content-Security-Policy" content="${buildCspMetaContent(nonce)}">
   ${stylesHtml ? `<style nonce="${nonce}">${stylesHtml}</style>` : ''}
-  ${scriptBlocks}
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'nonce-${nonce}'; img-src 'self' data:;">
 </head>
 <body>
   <div id="content">
     ${contentHtml}
   </div>
+  ${scriptBlocks}
 </body>
 </html>`.trim();
   return html;
@@ -440,7 +459,7 @@ const server = http.createServer(async (req, res) => {
 
     res.writeHead(200, {
       'Content-Type': 'text/html',
-        'Content-Security-Policy': `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'nonce-${nonce}'; img-src 'self' data:;`
+      'Content-Security-Policy': `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'nonce-${nonce}'; img-src 'self' data:;`
     });
     res.end(finalHtml);
     return;
