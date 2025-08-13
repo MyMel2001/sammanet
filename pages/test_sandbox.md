@@ -1,6 +1,6 @@
 # Sandbox Rendering Test
 
-This page exercises the sandboxed <snet-script> blocks and sanitized <snet-style> blocks.
+This page exercises the sandboxed "snet-script" blocks and sanitized "snet-style" blocks.
 
 <snet-script>
 console.log('sandbox test run');
