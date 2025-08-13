@@ -42,7 +42,7 @@ An alternative, minimal web server designed to serve regular internet traffic wh
 4. Explore:
    - GET /: Page index with links to available pages and endpoints.
    - GET /page/<name>: Render an encrypted page (decryptor runs in the browser to reveal content).
-   - POST /upload: Upload a file (expects JSON: { filename, data: base64 }) and a token, example:
+   - POST /upload: Upload a file (expects JSON: { filename, data: base64 } and a token), example:
    ```bash
    curl -X POST http://localhost:7742/upload -H "Content-Type: application/json" -H "Authorization: Bearer <TOKEN>" -d '{"filename":"test.bin","data":"BASE64_CONTENT"}'
     ```
