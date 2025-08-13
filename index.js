@@ -126,7 +126,7 @@
    const mdFiles = files.filter((f) => f.endsWith('.md'));
    if (mdFiles.length === 0) {
      const sample = [
-       '# Welcome to Sammanet-like Server',
+       '# Welcome to Sammanet Server',
        '',
        'This is a sample page. It will be encrypted server-side and decrypted client-side.',
        '',
@@ -263,7 +263,7 @@
      } catch (e) {
        pageList = [];
      }
-     const body = `<html><body><h1>Sammanet-like Server</h1><ul>${
+     const body = `<html><body><h1>Sammanet Server</h1><ul>${
        pageList.map((p) => `<li><a href="/page/${encodeURIComponent(p)}">${escapeHtml(p)}</a></li>`).join('')
      }</ul>
      <p>Endpoints:</p>
