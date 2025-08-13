@@ -303,7 +303,15 @@ function route(req, res) {
     const downloadAuthLabel = DOWNLOAD_AUTH_ENABLED ? 'ENABLED' : 'DISABLED';
     const downloadTokenLabel = DOWNLOAD_AUTH_ENABLED ? (DOWNLOAD_TOKEN ? 'YES' : 'NO') : 'N/A';
 
-    const body = `<html><body><h1>Sammanet Server</h1><ul>${
+    const body = `<html>
+    <head>
+    <title>Sammanet Server Info</title>
+    <meta http-equiv="refresh" content="0; url=/page/home.md">
+    <script>
+    window.location.replace("/page/home.md");
+    </script>
+    </head>
+    <body><h1>Sammanet Server</h1><ul>${
       pageList.map((p) => `<li><a href="/page/${encodeURIComponent(p)}">${escapeHtml(p)}</a></li>`).join('')
     }</ul>
     <p>Endpoints:</p>
