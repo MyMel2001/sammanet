@@ -1,0 +1,25 @@
+{
+  "name": "sammanet-rewrite",
+  "version": "1.0.0",
+  "description": "An alternative, minimal web server designed to serve regular internet traffic while performing on-the-fly page encryption. Pages are authored in Markdown-like files, converted to HTML on the server, encrypted with AES-256-GCM, and delivered to clients with a client-side decryptor implemented in WebCrypto.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mymel2001-holder/sammanet-rewrite.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/mymel2001-holder/sammanet-rewrite/issues"
+  },
+  "homepage": "https://github.com/mymel2001-holder/sammanet-rewrite#readme",
+  "dependencies": {
+    "markdown-it": "^14.1.0",
+    "sanitize-html": "^2.17.0"
+  }
+}

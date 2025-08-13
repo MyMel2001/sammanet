@@ -11,3 +11,5 @@ body { font-family: Arial, sans-serif; background: #f6f6f6; color: #333; }
 </snet-script>
 
 Enjoy exploring encryption-in-page-demo.
+
+[Page 2](page2.md)
