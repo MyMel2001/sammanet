@@ -244,7 +244,6 @@ function buildPlainPageHtml(pageName, contentHtml, stylesHtml, snetScripts, nonc
 <head>
   <meta charset="utf-8" />
   <title>${escapeHtml(pageName)}</title>
-  <meta http-equiv="Content-Security-Policy" content="${buildCspMetaContent(nonce)}">
   ${stylesHtml ? `<style nonce="${nonce}">${stylesHtml}</style>` : ''}
 </head>
 <body>
@@ -311,12 +310,6 @@ ensureSamplePage()
 const server = http.createServer(async (req, res) => {
   const { method, url } = req;
 
-  function respondHtml(status, html) {
-    res.writeHead(status, {
-      'Content-Type': 'text/html'
-    });
-    res.end(html);
-  }
 
   // Root page: quick index
   if (url === '/' && method === 'GET') {
@@ -456,10 +449,12 @@ const server = http.createServer(async (req, res) => {
 
     const nonce = crypto.randomBytes(16).toString('base64');
     const finalHtml = buildPlainPageHtml(name, contentHtml, stylesHtml, snetScripts, nonce);
-
+    res.setHeader(
+      'Content-Security-Policy',
+      `${buildCspMetaContent(nonce)}`
+    )
     res.writeHead(200, {
-      'Content-Type': 'text/html',
-      'Content-Security-Policy': `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'nonce-${nonce}'; img-src 'self' data:;`
+      'Content-Type': 'text/html'
     });
     res.end(finalHtml);
     return;
