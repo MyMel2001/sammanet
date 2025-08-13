@@ -3,9 +3,11 @@
  - Pages are authored in a lightweight Markdown-like format in ./pages (e.g., hello.md).
  - Pages are rendered to HTML on the server using a Markdown library (markdown-it when available),
    then sanitized and served as complete HTML pages.
- - Custom <snet-script> and <snet-style> tags found in Markdown are preserved and injected into the final HTML as raw blocks. This is a demonstration and not production security.
+ - Custom <snet-script> and <snet-style> blocks found in Markdown are preserved and injected into the final HTML as raw blocks. This is a demonstration and not production security.
  - This path renders plain HTML (no client-side decryption). Encryption-related code paths have been
    added to support server-side encryption and token-based upload/download when enabled.
+ - Scripting functionality is allowed in a sandboxed form. Dangerous operations are blocked or replaced
+   with dummy placeholders to prevent arbitrary code execution while still enabling basic script interactions.
 */
 
 const http = require('http');
@@ -13,6 +15,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { URL } = require('url');
+const vm = require('vm'); // Sandbox execution
 
 // Markdown + sanitizer (optional)
 let MarkdownIt = null;
@@ -130,6 +133,81 @@ function escapeHtml(s) {
     .replace(/'/g, '&#39;');
 }
 
+// Simple CSS sanitizer to allow safe style blocks
+function sanitizeCss(css) {
+  if (!css) return '';
+  let s = css;
+  // Remove dangerous schemes
+  s = s.replace(/javascript:/gi, '');
+  s = s.replace(/vbscript:/gi, '');
+  // Remove potentially dangerous CSS expressions
+  s = s.replace(/expression\s*\(/gi, '');
+  // Sanitize url(...) contents: if contains dangerous schemes, replace with about:blank
+  s = s.replace(/url\(\s*(['"]?)([^'")]+)\1\s*\)/gi, (match, quote, url) => {
+    const lower = url.toLowerCase().trim();
+    if (lower.startsWith('javascript:') || lower.startsWith('vbscript:') || lower.startsWith('data:')) {
+      return 'url("about:blank")';
+    }
+    return match;
+  });
+  return s;
+}
+
+// Sandbox for snet-script execution
+function runSnetScriptInSandbox(code) {
+  const outputs = [];
+
+  // Proxy to intercept dangerous DOM mutations like document.body.innerHTML
+  const bodyProxy = new Proxy({ innerHTML: '' }, {
+    set: (target, prop, value) => {
+      if (prop === 'innerHTML') {
+        outputs.push('[blocked document.body.innerHTML assignment]');
+        return true;
+      }
+      target[prop] = value;
+      return true;
+    },
+    get: (target, prop) => {
+      return target[prop];
+    }
+  });
+
+  const sandbox = {
+    console: {
+      log: (...args) => outputs.push(args.map(String).join(' ')),
+      error: (...args) => outputs.push('[error] ' + args.map(String).join(' '))
+    },
+    document: { body: bodyProxy },
+    window: {},
+    // Block or dummy dangerous primitives
+    fetch: () => { outputs.push('[blocked fetch]'); return Promise.resolve({ ok: false }); },
+    XMLHttpRequest: function(){ outputs.push('[blocked XMLHttpRequest]'); },
+    eval: () => { outputs.push('[blocked eval]'); return undefined; },
+    Function: function() { outputs.push('[blocked Function]'); throw new Error('Not allowed'); },
+    setTimeout: function() { return 0; },
+    clearTimeout: function() {},
+    setInterval: function() { return 0; },
+    clearInterval: function() {}
+  };
+  const context = vm.createContext(sandbox);
+  try {
+    const script = new vm.Script(code, { timeout: 1000 });
+    script.runInContext(context);
+  } catch (e) {
+    outputs.push('[sandbox error: ' + e.message + ']');
+  }
+
+  // If script touched document.body.innerHTML, capture a note
+  try {
+    const bodyVal = (sandbox.document && sandbox.document.body && sandbox.document.body.innerHTML) || '';
+    if (bodyVal) outputs.push('[sandbox body: ' + bodyVal + ']');
+  } catch (e) {
+    // ignore
+  }
+
+  return outputs;
+}
+
 // Markdown rendering: prefer MarkdownIt if available
 function mdToHtmlWithLib(md) {
   if (mdRenderer) {
@@ -162,13 +240,15 @@ function mdToHtmlWithLib(md) {
       while ((m = regex.exec(line)) !== null) {
         const start = m.index;
         const end = regex.lastIndex;
-        result += escapeHtml(line.substring(lastIndex, start));
+        result += escapeHtml(line.substring(0, start));
         const text = m[1];
         const url = m[2];
         result += `<a href="${escapeHtml(url).replace(/"/g, '"')}" target="_blank" rel="noopener">${escapeHtml(text)}</a>`;
+        line = line.substring(end);
+        regex.lastIndex = 0;
         lastIndex = end;
       }
-      result += escapeHtml(line.substring(lastIndex));
+      result += escapeHtml(line);
       return `<p>${result}</p>\n`;
     }
   }
@@ -234,8 +314,23 @@ function buildCspMetaContent(nonce) {
 
 // Build a plain HTML page (no encryption)
 function buildPlainPageHtml(pageName, contentHtml, stylesHtml, snetScripts, nonce) {
+  // Sanitize/clean style blocks
+  const safeStyles = sanitizeCss(stylesHtml);
+
+  // Run snet-script blocks in a sandboxed environment and render outputs as non-executable blocks
   const scriptBlocks = (snetScripts && snetScripts.length)
-    ? snetScripts.map((s) => `<script nonce="${nonce}">${s}</script>`).join('\n')
+    ? snetScripts
+        .map((s) => {
+          let report = '';
+          if (true) { // ENABLE_SN_SCRIPT_SANDBOX
+            const outs = runSnetScriptInSandbox(s);
+            report = outs.join('\\n');
+          } else {
+            report = s;
+          }
+          return `<pre class="snet-script" aria-label="sanitized-snet-script">${escapeHtml(report)}</pre>`;
+        })
+        .join('\\n')
     : '';
 
   const html = ` 
@@ -244,7 +339,7 @@ function buildPlainPageHtml(pageName, contentHtml, stylesHtml, snetScripts, nonc
 <head>
   <meta charset="utf-8" />
   <title>${escapeHtml(pageName)}</title>
-  ${stylesHtml ? `<style nonce="${nonce}">${stylesHtml}</style>` : ''}
+  ${safeStyles ? `<style nonce="${nonce}">${safeStyles}</style>` : ''}
 </head>
 <body>
   <div id="content">
@@ -294,7 +389,8 @@ function ensureSamplePage() {
       '</snet-style>',
       '',
       '<snet-script>',
-      '// Script blocks are preserved and injected as raw blocks in the final HTML.',
+      '// Script blocks are preserved and executed in a sandbox with dummy placeholders.',
+      'console.log("sandbox run");',
       '</snet-script>',
       '',
       'Enjoy exploring the plain HTML rendering path.'
