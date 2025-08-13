@@ -3,10 +3,9 @@
  - Pages are authored in a lightweight Markdown-like format in ./pages (e.g., hello.md).
  - Pages are rendered to HTML on the server using a Markdown library (markdown-it when available),
    then sanitized and served as complete HTML pages.
- - Custom <snet-script> and <snet-style> tags found in Markdown are preserved and injected
-   into the final HTML as raw blocks. This is a demonstration and not production security.
+ - Custom <snet-script> and <snet-style> tags found in Markdown are preserved and injected into the final HTML as raw blocks. This is a demonstration and not production security.
  - This path renders plain HTML (no client-side decryption). Encryption-related code paths have been
-   removed in favor of direct HTML delivery for simplicity and debugging.
+   added to support server-side encryption and token-based upload/download when enabled.
 */
 
 const http = require('http');
@@ -72,13 +71,53 @@ const UPLOAD_TOKEN = process.env.UPLOAD_TOKEN || 'default-upload-token'; // toke
 let DOWNLOAD_AUTH_ENABLED = parseBoolEnv(process.env.DOWNLOAD_AUTH_ENABLED, false); // default: disabled
 const DOWNLOAD_TOKEN = process.env.DOWNLOAD_TOKEN || 'default-download-token'; // token for downloads authentication
 
-// Ensure required directories exist
+// Encryption configuration (server-side)
+function deriveKeyFromString(keyString) {
+  // Try to interpret as base64
+  try {
+    const buf = Buffer.from(keyString, 'base64');
+    if (buf.length === 32) return buf;
+  } catch (e) {
+    // ignore
+  }
+  // Try hex
+  try {
+    const buf = Buffer.from(keyString, 'hex');
+    if (buf.length === 32) return buf;
+  } catch (e) {
+    // ignore
+  }
+  // Fallback: derive from string via SHA-256
+  return crypto.createHash('sha256').update(keyString || 'default-server-key').digest();
+}
+let ENCRYPTION_KEY = deriveKeyFromString(process.env.SERVER_ENC_KEY || 'default-server-enc-key');
+if (!ENCRYPTION_KEY || ENCRYPTION_KEY.length !== 32) {
+  ENCRYPTION_KEY = crypto.createHash('sha256').update(process.env.SERVER_ENC_KEY || 'default-server-enc-key').digest();
+}
 function ensureDir(dir) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 ensureDir(PAGES_DIR);
 ensureDir(UPLOAD_DIR);
 ensureDir(UPLOAD_META_DIR);
+
+// JSON body reader helper
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    let data = '';
+    req.on('data', (chunk) => {
+      data += chunk;
+    });
+    req.on('end', () => {
+      try {
+        const json = JSON.parse(data || '{}');
+        resolve(json);
+      } catch (e) {
+        reject(e);
+      }
+    });
+  });
+}
 
 // Basic HTML escaping (fallback)
 function escapeHtml(s) {
@@ -199,6 +238,30 @@ function buildPlainPageHtml(pageName, contentHtml, stylesHtml, snetScripts, nonc
   return html;
 }
 
+// Encryption helpers (AES-256-GCM)
+REPLACE
+function encryptBuffer(plaintext) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', ENCRYPTION_KEY, iv);
+  const ct = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return {
+    iv: iv.toString('base64'),
+    ct: ct.toString('base64'),
+    tag: tag.toString('base64')
+  };
+}
+REPLACE
+function decryptBuffer(enc) {
+  const iv = Buffer.from(enc.iv, 'base64');
+  const ct = Buffer.from(enc.ct, 'base64');
+  const authTag = Buffer.from(enc.tag, 'base64');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', ENCRYPTION_KEY, iv);
+  decipher.setAuthTag(authTag);
+  const plaintext = Buffer.concat([decipher.update(ct), decipher.final()]);
+  return plaintext;
+}
+
 // Initialize with a sample page if none exist
 function ensureSamplePage() {
   const files = fs.existsSync(PAGES_DIR) ? fs.readdirSync(PAGES_DIR) : [];
@@ -228,7 +291,7 @@ function ensureSamplePage() {
 ensureSamplePage()
 
 // Create the HTTP server
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
   const { method, url } = req;
 
   function respondHtml(status, html) {
@@ -261,7 +324,102 @@ const server = http.createServer((req, res) => {
   <p>Plain HTML rendering path. Page rendering at /page/<name></p>
 </body>
 </html>`;
-    respondHtml(200, body);
+    res.writeHead(200, {
+      'Content-Type': 'text/html'
+    });
+    res.end(body);
+    return;
+  }
+
+  // Upload endpoint (server-side encryption)
+  if (url === '/upload' && method === 'POST') {
+    // Ensure uploads are enabled
+    if (!UPLOAD_ENABLED) {
+      res.writeHead(403, {'Content-Type': 'application/json'});
+      res.end(JSON.stringify({ ok: false, error: 'Uploads are disabled' }));
+      return;
+    }
+    // Auth check (token-based)
+    if (UPLOAD_AUTH_ENABLED) {
+      const auth = req.headers['authorization'] || '';
+      const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+      if (!token || token !== UPLOAD_TOKEN) {
+        res.writeHead(401, {'Content-Type': 'application/json'});
+        res.end(JSON.stringify({ ok: false, error: 'Unauthorized for upload' }));
+        return;
+      }
+    }
+
+    try {
+      const payload = await readJsonBody(req);
+      const { filename, data_base64 } = payload;
+      if (!filename || !data_base64) {
+        res.writeHead(400, {'Content-Type': 'application/json'});
+        res.end(JSON.stringify({ ok: false, error: 'Missing filename or data_base64' }));
+        return;
+      }
+      const plaintext = Buffer.from(data_base64, 'base64');
+      const enc = encryptBuffer(plaintext);
+      const encFilePath = path.join(UPLOAD_DIR, filename.endsWith('.enc.json') ? filename : filename + '.enc.json');
+      fs.writeFileSync(encFilePath, JSON.stringify(enc, null, 2), 'utf8');
+      // Optional meta
+      const metaPath = path.join(UPLOAD_META_DIR, (filename || 'upload') + '.meta.json');
+      const meta = {
+        filename: path.basename(encFilePath),
+        uploadedAt: Date.now(),
+        size: plaintext.length,
+      };
+      fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2), 'utf8');
+      res.writeHead(200, {'Content-Type': 'application/json'});
+      res.end(JSON.stringify({ ok: true, file: path.basename(encFilePath) }));
+    } catch (err) {
+      res.writeHead(500, {'Content-Type': 'application/json'});
+      res.end(JSON.stringify({ ok: false, error: err.message }));
+    }
+    return;
+  }
+
+  // Download endpoint (decrypt on-the-fly)
+  if (url.startsWith('/download/') && method === 'GET') {
+    if (!DOWNLOAD_ENABLED) {
+      res.writeHead(403, {'Content-Type': 'application/json'});
+      res.end(JSON.stringify({ ok: false, error: 'Downloads are disabled' }));
+      return;
+    }
+    // Auth for download if enabled
+    if (DOWNLOAD_AUTH_ENABLED) {
+      const auth = req.headers['authorization'] || '';
+      const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+      if (!token || token !== DOWNLOAD_TOKEN) {
+        res.writeHead(401, {'Content-Type': 'application/json'});
+        res.end(JSON.stringify({ ok: false, error: 'Unauthorized for download' }));
+        return;
+      }
+    }
+
+    const name = url.substring('/download/'.length);
+    const encFilePath = path.join(UPLOAD_DIR, name.endsWith('.enc.json') ? name : name + '.enc.json');
+    if (!fs.existsSync(encFilePath)) {
+      res.writeHead(404, {'Content-Type': 'application/json'});
+      res.end(JSON.stringify({ ok: false, error: 'Encrypted file not found' }));
+      return;
+    }
+    try {
+      const encRaw = fs.readFileSync(encFilePath, 'utf8');
+      const enc = JSON.parse(encRaw);
+REPLACE
+
+      const plaintext = decryptBuffer(enc);
+      res.writeHead(200, {
+        'Content-Type': 'application/octet-stream',
+        'Content-Disposition': `attachment; filename="${path.basename(encFilePath, '.enc.json')}"`
+
+      });
+      res.end(plaintext);
+    } catch (err) {
+      res.writeHead(500, {'Content-Type': 'application/json'});
+      res.end(JSON.stringify({ ok: false, error: err.message }));
+    }
     return;
   }
 
