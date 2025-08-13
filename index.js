@@ -239,7 +239,6 @@ function buildPlainPageHtml(pageName, contentHtml, stylesHtml, snetScripts, nonc
 }
 
 // Encryption helpers (AES-256-GCM)
-REPLACE
 function encryptBuffer(plaintext) {
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv('aes-256-gcm', ENCRYPTION_KEY, iv);
@@ -251,7 +250,6 @@ function encryptBuffer(plaintext) {
     tag: tag.toString('base64')
   };
 }
-REPLACE
 function decryptBuffer(enc) {
   const iv = Buffer.from(enc.iv, 'base64');
   const ct = Buffer.from(enc.ct, 'base64');
@@ -407,7 +405,6 @@ const server = http.createServer(async (req, res) => {
     try {
       const encRaw = fs.readFileSync(encFilePath, 'utf8');
       const enc = JSON.parse(encRaw);
-REPLACE
 
       const plaintext = decryptBuffer(enc);
       res.writeHead(200, {
