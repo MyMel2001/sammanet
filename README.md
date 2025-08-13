@@ -4,7 +4,7 @@ An alternative, minimal web server designed to serve regular internet traffic wh
 
 ## What you’ll find
 - index.js: Minimal Node.js server implementing page encryption, page extraction, and a simple upload/download flow.
-- pages/: Directory containing Markdown-like pages (e.g., hello.md) that are converted to HTML and encrypted.
+- pages/: Directory containing Markdown-like pages (e.g., home.md) that are converted to HTML and encrypted.
 - data/uploads/: Encrypted uploads are stored here.
 - data/uploads_meta/: Metadata for encrypted uploads.
 - README.md: This file.
@@ -38,11 +38,14 @@ An alternative, minimal web server designed to serve regular internet traffic wh
 1. Ensure Node.js is installed (the project uses built-in Node.js crypto, http, fs, and path modules).
 2. Run the server:
    - node index.js
-3. Open http://localhost:3000 in your browser.
+3. Open http://localhost:7742 in your browser.
 4. Explore:
    - GET /: Page index with links to available pages and endpoints.
    - GET /page/<name>: Render an encrypted page (decryptor runs in the browser to reveal content).
-   - POST /upload: Upload a file (expects JSON: { filename, data: base64 }).
+   - POST /upload: Upload a file (expects JSON: { filename, data: base64 }) and a token, example:
+   ```bash
+   curl -X POST http://localhost:7742/upload -H "Content-Type: application/json" -H "Authorization: Bearer <TOKEN>" -d '{"filename":"test.bin","data":"BASE64_CONTENT"}'
+    ```
    - GET /download/<filename>: Download and decrypt a stored encrypted file.
 
 ## Security notes

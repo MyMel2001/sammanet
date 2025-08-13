@@ -325,7 +325,7 @@ function route(req, res) {
       <li>Uploads authentication: ${UPLOAD_AUTH_ENABLED ? 'ENABLED' : 'DISABLED'}</li>
       <li>Upload token configured: ${UPLOAD_TOKEN ? 'YES' : 'NO'}</li>
       <li>Upload example:
-        curl -X POST http://localhost:3000/upload -H "Content-Type: application/json" -H "Authorization: Bearer <TOKEN>" -d '{\"filename\":\"test.bin\",\"data\":\"BASE64_CONTENT\"}'
+        curl -X POST http://localhost:7742/upload -H "Content-Type: application/json" -H "Authorization: Bearer <TOKEN>" -d '{\"filename\":\"test.bin\",\"data\":\"BASE64_CONTENT\"}'
       </li>
       <li>Downloads authentication: ${downloadAuthLabel}</li>
       <li>Download token configured: ${downloadTokenLabel}</li>
