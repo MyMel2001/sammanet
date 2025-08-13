@@ -51,6 +51,10 @@ let DOWNLOAD_ENABLED = parseBoolEnv(process.env.DOWNLOAD_ENABLED, true); // enab
 const UPLOAD_AUTH_ENABLED = parseBoolEnv(process.env.UPLOAD_AUTH_ENABLED, true); // auth guard for uploads
 const UPLOAD_TOKEN = process.env.UPLOAD_TOKEN || 'default-upload-token'; // token for uploads authentication
 
+// Optional download authentication
+let DOWNLOAD_AUTH_ENABLED = parseBoolEnv(process.env.DOWNLOAD_AUTH_ENABLED, false); // default: disabled
+const DOWNLOAD_TOKEN = process.env.DOWNLOAD_TOKEN || 'default-download-token'; // token for downloads authentication
+
 // Ensure required directories exist
 function ensureDir(dir) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -295,6 +299,10 @@ function route(req, res) {
     // Generate a per-request nonce for CSP
     const nonce = crypto.randomBytes(16).toString('base64');
 
+    // Local flags for display
+    const downloadAuthLabel = DOWNLOAD_AUTH_ENABLED ? 'ENABLED' : 'DISABLED';
+    const downloadTokenLabel = DOWNLOAD_AUTH_ENABLED ? (DOWNLOAD_TOKEN ? 'YES' : 'NO') : 'N/A';
+
     const body = `<html><body><h1>Sammanet Server</h1><ul>${
       pageList.map((p) => `<li><a href="/page/${encodeURIComponent(p)}">${escapeHtml(p)}</a></li>`).join('')
     }</ul>
@@ -303,6 +311,26 @@ function route(req, res) {
       <li>View page: GET /page/<name></li>
       <li>Upload file: POST /upload (JSON: { filename, data: base64 })</li>
       <li>Download file: GET /download/<filename></li>
+    </ul>
+    <h2>Authentication details</h2>
+    <ul>
+      <li>Uploads authentication: ${UPLOAD_AUTH_ENABLED ? 'ENABLED' : 'DISABLED'}</li>
+      <li>Upload token configured: ${UPLOAD_TOKEN ? 'YES' : 'NO'}</li>
+      <li>Upload example:
+        curl -X POST http://localhost:3000/upload -H "Content-Type: application/json" -H "Authorization: Bearer <TOKEN>" -d '{\"filename\":\"test.bin\",\"data\":\"BASE64_CONTENT\"}'
+      </li>
+      <li>Downloads authentication: ${downloadAuthLabel}</li>
+      <li>Download token configured: ${downloadTokenLabel}</li>
+      <li>Environment configuration:
+        <ul>
+          <li UPLOAD_ENABLED: enable/disable uploads (default true)</li>
+          <li DOWNLOAD_ENABLED: enable/disable downloads (default true)</li>
+          <li>UPLOAD_AUTH_ENABLED: enable/disable upload auth (default true)</li>
+          <li>UPLOAD_TOKEN: token value used for uploads (default 'default-upload-token')</li>
+          <li>DOWNLOAD_AUTH_ENABLED: enable/disable download auth (default false)</li>
+          <li>DOWNLOAD_TOKEN: token value used for downloads (default 'default-download-token')</li>
+        </ul>
+      </li>
     </ul></body></html>`;
     respondHtml(200, body, nonce);
     return;
@@ -398,7 +426,7 @@ function route(req, res) {
         const payloadBase64 = String(j.data || '');
         const fileBytes = Buffer.from(payloadBase64, 'base64');
 
-        const MAX_BYTES = 1024 * 1024;
+        const MAX_BYTES = 10740000000; // 10 gigs
         if (fileBytes.length > MAX_BYTES) {
           res.writeHead(413, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ ok: false, error: 'file too large' }));
@@ -441,6 +469,17 @@ function route(req, res) {
       res.writeHead(403, { 'Content-Type': 'text/plain' });
       res.end('downloads are disabled');
       return;
+    }
+
+    // Optional authentication for downloads
+    if (DOWNLOAD_AUTH_ENABLED) {
+      const auth = req.headers['authorization'];
+      const token = auth && auth.startsWith('Bearer ') ? auth.slice(7) : auth;
+      if (!token || token !== DOWNLOAD_TOKEN) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'unauthorized' }));
+        return;
+      }
     }
 
     const filename = decodeURIComponent(url.substring('/download/'.length)).toString();
