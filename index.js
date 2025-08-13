@@ -16,7 +16,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { URL } = require('url');
 
-const PORT = 3000;
+const PORT = 7742;
 const PAGES_DIR = path.join(__dirname, 'pages');
 const UPLOAD_DIR = path.join(__dirname, 'data', 'uploads');
 const UPLOAD_META_DIR = path.join(__dirname, 'data', 'uploads_meta');
