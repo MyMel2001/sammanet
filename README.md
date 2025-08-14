@@ -38,7 +38,7 @@ An alternative, minimal web server designed to serve regular internet traffic wh
 1. Ensure Node.js is installed (the project uses built-in Node.js crypto, http, fs, and path modules).
 2. Run the server:
    - node index.js
-+      - Note: index.js includes enhanced filtering for scripting and styling blocks (<snet-script> and <snet-style>). These blocks are sanitized during extraction and can be reinjected into the final HTML according to configuration.
+      - Note: index.js includes enhanced filtering for scripting and styling blocks (<snet-script> and <snet-style>). These blocks are sanitized during extraction and can be reinjected into the final HTML according to configuration.
 3. Open http://localhost:7742 in your browser.
 4. Explore:
    - GET /: Page index with links to available pages and endpoints.
