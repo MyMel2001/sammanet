@@ -1,4 +1,4 @@
-# Welcome to Sammanet Server
+# Welcome to Sammanet!
 
 This is a sample page. It will be encrypted server-side and decrypted client-side.
 <snet-style>
